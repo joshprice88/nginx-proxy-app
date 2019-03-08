@@ -98,6 +98,12 @@ resource "aws_security_group" "project_bastion_sg" {
         vpc_id = "${aws_vpc.project_vpc.id}"
 }
 
+resource "aws_security_group" "calibre_sg" {
+	name = "calibre_sg"
+	description = "Security group for calibre instances"
+	vpc_id = "${aws_vpc.project_vpc.id}"
+}
+
 resource "aws_security_group_rule" "allow_http_inbound" {
 	type = "ingress"
 
@@ -159,6 +165,29 @@ resource "aws_security_group_rule" "allow_all_outbound_bastion" {
 
 }
 
+resource "aws_security_group_rule" "allow_8083_inbound" {
+        type = "ingress"
+
+        from_port   = 8083
+        to_port     = 8083
+        protocol    = "tcp"
+        cidr_blocks = ["0.0.0.0/0"]
+        
+        security_group_id = "${aws_security_group.calibre_sg.id}"
+}
+
+resource "aws_security_group_rule" "allow_all_outbound_calibre" {
+        type = "egress"
+
+        from_port   = 0
+        to_port     = 0
+        protocol    = "-1"
+
+        cidr_blocks = ["0.0.0.0/0"]
+
+        security_group_id = "${aws_security_group.calibre_sg.id}"
+}
+
 #------Compute-----
 
 resource "aws_key_pair" "project_auth" {
@@ -197,7 +226,7 @@ resource "aws_instance" "nginx_bastion" {
 resource "aws_launch_configuration" "calibre_lc" {
 	name_prefix = "cal-lc-"
 	instance_type = "${var.calibre_instance_type}"
-	ami = "${var.calibre_instance_ami}"
+	image_id = "${var.calibre_instance_ami}"
 	security_groups = ["${aws_security_group.calibre_sg.id}"]
 	key_name = "${aws_key_pair.project_auth.id}"	
 	user_data = "${file(var.calibre_userdata_path)}"
@@ -207,7 +236,17 @@ resource "aws_launch_configuration" "calibre_lc" {
 	}
 }
 
+resource "aws_autoscaling_group" "calibre-asg" {
+	name = "asg-${aws_launch_configuration.calibre_lc.id}"
+	max_size = "${var.calibre_asg_max}"
+	min_size = "${var.calibre_asg_min}"
+	health_check_grace_period = "${var.calibre_asg_grace}"
+	health_check_type = "${var.calibre_hct}"
+	
 
+
+
+}
 
 
 
