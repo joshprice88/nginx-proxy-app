@@ -1,0 +1,6 @@
+#!/bin/bash
+
+amazon-linux-extras install -y epel
+yum -y install nginx
+echo "hello, world" > /usr/share/nginx/html/index.html
+systemctl start nginx && systemctl enable nginx

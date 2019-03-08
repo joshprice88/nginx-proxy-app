@@ -1,0 +1,20 @@
+#!/bin/bash
+
+yum install -y python-pip git
+useradd calibre
+su - calibre -c "git clone https://github.com/janeczku/calibre-web /home/calibre/calibre-web"
+pip install -r /home/calibre/calibre-web/requirements.txt
+
+cat <<EOF >>/etc/systemd/system/cps.service
+Description=Calibre-web
+
+[Service]
+Type=simple
+User=calibre
+ExecStart=/bin/python /home/calibre/calibre-web/cps.py
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl enable cps.service && systemctl start cps.service
