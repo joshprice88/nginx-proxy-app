@@ -12,8 +12,8 @@ private_subnet_cidrs = ["10.0.3.0/24","10.0.4.0/24"]
 private_subnet_zones = ["us-west-1a", "us-west-1c"]
 
 key_name = "project-key"
-public_key_path = "/home/josh/.ssh/id_rsa.pub" 
-private_key_path = "/home/josh/.ssh/id_rsa"
+public_key_path = "/path/to/publickey" 
+private_key_path = "path/to/privatekey"
 
 nginx_instance_type = "t2.micro"
 nginx_instance_ami = "ami-09bfcadb25ee95bec"
