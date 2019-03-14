@@ -1,0 +1,38 @@
+aws_region = "us-west-1"
+project_name = "nginx"
+
+vpc_cidr = "10.0.0.0/16"
+
+public_subnet_names = ["public1", "public2"]
+public_subnet_cidrs = ["10.0.1.0/24","10.0.2.0/24"]
+public_subnet_zones = ["us-west-1a", "us-west-1c"]
+
+private_subnet_names = ["private1", "private2"]
+private_subnet_cidrs = ["10.0.3.0/24","10.0.4.0/24"]
+private_subnet_zones = ["us-west-1a", "us-west-1c"]
+
+key_name = "project-key"
+public_key_path = "/home/josh/.ssh/id_rsa.pub" 
+private_key_path = "/home/josh/.ssh/id_rsa"
+
+nginx_instance_type = "t2.micro"
+nginx_instance_ami = "ami-09bfcadb25ee95bec"
+nginx_userdata_path = "/path/to/userdata/script"
+
+bastion_instance_type = "t2.micro"
+bastion_instance_ami = "ami-09bfcadb25ee95bec"
+
+calibre_instance_type = "t2.micro"
+calibre_instance_ami = "ami-09bfcadb25ee95bec"
+calibre_userdata_path = "/path/to/userdata/script"
+
+calibre_elb_healthy_threshold   = "2"
+calibre_elb_unhealthy_threshold = "2"
+calibre_elb_timeout = "3"
+calibre_elb_interval = "30"
+
+calibre_asg_max = "2"
+calibre_asg_min	= "1"
+calibre_asg_grace= "300"
+calibre_asg_hct	= "EC2"
+calibre_asg_cap	= "2"

@@ -65,6 +65,11 @@ resource "aws_route_table" "public_rt" {
 resource "aws_default_route_table" "private_rt" {
 	default_route_table_id = "${aws_vpc.project_vpc.default_route_table_id}"
 
+	route {
+		cidr_block = "0.0.0.0/0"
+		nat_gateway_id = "${aws_nat_gateway.calibre_nat_gw.id}"
+	}
+
 	tags {
 		Name = "project-private"
 	}
@@ -81,6 +86,21 @@ resource "aws_route_table_association" "private_assoc" {
         count = "${length(var.private_subnet_names)}"
         subnet_id = "${element(aws_subnet.private_subnets.*.id, count.index)}"
         route_table_id = "${aws_default_route_table.private_rt.id}"
+}
+
+#NAT Gateway for private instances
+resource "aws_eip" "nat_eip" {
+	count    = "1"
+	vpc = true
+}
+
+resource "aws_nat_gateway" "calibre_nat_gw" {
+	allocation_id = "${aws_eip.nat_eip.id}"
+	subnet_id = "${aws_subnet.public_subnets.*.id[0]}"
+
+	tags = {
+		Name = "calibre_gw"
+  }
 }
 
 
@@ -101,6 +121,12 @@ resource "aws_security_group" "project_bastion_sg" {
 resource "aws_security_group" "calibre_sg" {
 	name = "calibre_sg"
 	description = "Security group for calibre instances"
+	vpc_id = "${aws_vpc.project_vpc.id}"
+}
+
+resource "aws_security_group" "calibre_elb_sg" {
+	name = "calibre_elb_sg"
+	description = "Security group for the calibre load balancer"
 	vpc_id = "${aws_vpc.project_vpc.id}"
 }
 
@@ -146,9 +172,9 @@ resource "aws_security_group_rule" "allow_all_outbound_sg" {
         to_port     = 0
         protocol    = "-1"
 
-		cidr_blocks = ["0.0.0.0/0"]
+	cidr_blocks = ["0.0.0.0/0"]
 
-		security_group_id = "${aws_security_group.project_rp_sg.id}"
+	security_group_id = "${aws_security_group.project_rp_sg.id}"
 
 }
 
@@ -159,7 +185,7 @@ resource "aws_security_group_rule" "allow_all_outbound_bastion" {
         to_port     = 0
         protocol    = "-1"
 
-		cidr_blocks = ["0.0.0.0/0"]
+	cidr_blocks = ["0.0.0.0/0"]
 
         security_group_id = "${aws_security_group.project_bastion_sg.id}"
 
@@ -171,7 +197,7 @@ resource "aws_security_group_rule" "allow_8083_inbound" {
         from_port   = 8083
         to_port     = 8083
         protocol    = "tcp"
-        cidr_blocks = ["0.0.0.0/0"]
+        source_security_group_id = "${aws_security_group.calibre_elb_sg.id}"
         
         security_group_id = "${aws_security_group.calibre_sg.id}"
 }
@@ -186,6 +212,41 @@ resource "aws_security_group_rule" "allow_all_outbound_calibre" {
         cidr_blocks = ["0.0.0.0/0"]
 
         security_group_id = "${aws_security_group.calibre_sg.id}"
+}
+
+resource "aws_security_group_rule" "allow_ssh_from_bastion_calibre" {
+        type = "ingress"
+
+        from_port   = 22
+        to_port     = 22
+        protocol    = "tcp"
+        source_security_group_id = "${aws_security_group.project_bastion_sg.id}"
+        security_group_id = "${aws_security_group.calibre_sg.id}"
+
+}
+
+resource "aws_security_group_rule" "allow_all_outbound_calibre_elb" {
+        type = "egress"
+
+        from_port   = 0
+        to_port     = 0
+        protocol    = "-1"
+
+        cidr_blocks = ["0.0.0.0/0"]
+
+        security_group_id = "${aws_security_group.calibre_elb_sg.id}"
+}
+
+
+resource "aws_security_group_rule" "allow_http_inbound_elb" {
+        type = "ingress"
+
+        from_port   = 80
+        to_port     = 80
+        protocol    = "tcp"
+        cidr_blocks = ["0.0.0.0/0"]
+
+        security_group_id = "${aws_security_group.calibre_elb_sg.id}"
 }
 
 #------Compute-----
@@ -210,7 +271,7 @@ resource "aws_instance" "nginx_rp" {
 	user_data = "${file(var.nginx_userdata_path)}"
 }
 
-resource "aws_instance" "nginx_bastion" {
+resource "aws_instance" "calibre_bastion" {
         instance_type = "${var.bastion_instance_type}"
         ami = "${var.bastion_instance_ami}"
 
@@ -220,7 +281,49 @@ resource "aws_instance" "nginx_bastion" {
 
         subnet_id = "${aws_subnet.public_subnets.*.id[0]}"
         vpc_security_group_ids = ["${aws_security_group.project_bastion_sg.id}"]
-	key_name = "${aws_key_pair.project_auth.id}"
+		key_name = "${aws_key_pair.project_auth.id}"
+		
+		provisioner "file" {
+			source = "${var.private_key_path}"
+			destination = "/home/ec2-user/.ssh/id_rsa"
+			
+			connection {
+				type = "ssh"
+				user = "ec2-user"
+				private_key = "${file("${var.private_key_path}")}"
+			}
+		}
+}
+
+resource "aws_elb" "calibre_elb" {
+	name = "calibre-elb"
+	subnets = ["${aws_subnet.public_subnets.*.id}"]
+
+	security_groups = ["${aws_security_group.calibre_elb_sg.id}"]
+
+	listener {
+		instance_port = 8083
+		instance_protocol = "http"
+		lb_port = 80
+		lb_protocol = "http"
+	}
+
+	health_check {
+		healthy_threshold = "${var.calibre_elb_healthy_threshold}"
+		unhealthy_threshold = "${var.calibre_elb_unhealthy_threshold}"
+		timeout = "${var.calibre_elb_timeout}"
+		target = "TCP:8083"
+		interval = "${var.calibre_elb_interval}"
+	}
+
+	cross_zone_load_balancing = true
+	idle_timeout = 120
+	connection_draining = true
+	connection_draining_timeout = 120
+
+	tags {
+		Name = "calibre-elb"
+	}
 }
 	
 resource "aws_launch_configuration" "calibre_lc" {
@@ -241,10 +344,24 @@ resource "aws_autoscaling_group" "calibre-asg" {
 	max_size = "${var.calibre_asg_max}"
 	min_size = "${var.calibre_asg_min}"
 	health_check_grace_period = "${var.calibre_asg_grace}"
-	health_check_type = "${var.calibre_hct}"
+	health_check_type = "${var.calibre_asg_hct}"
+	desired_capacity = "${var.calibre_asg_cap}"
+	force_delete = true
+	load_balancers = ["${aws_elb.calibre_elb.id}"]
 	
+	vpc_zone_identifier = ["${aws_subnet.private_subnets.*.id}"]
 
+	launch_configuration = "${aws_launch_configuration.calibre_lc.name}"
 
+	tag {
+		key = "Name"
+		value = "calibre_asg-instance"
+		propagate_at_launch = true
+	}
+
+	lifecycle {
+		create_before_destroy = true
+	}
 
 }
 
