@@ -83,7 +83,7 @@ resource "aws_launch_configuration" "calibre_lc" {
 	name_prefix = "cal-lc-"
 	instance_type = "${var.calibre_instance_type}"
 	image_id = "${var.calibre_instance_ami}"
-	security_groups = ["${aws_security_group.calibre_sg.id}"]
+	security_groups = ["${aws_security_group.calibre_sg.id}", "${aws_security_group.nfs_sg.id}"]
 	key_name = "${aws_key_pair.project_auth.id}"	
 	user_data = "${file(var.calibre_userdata_path)}"
 	
@@ -118,11 +118,22 @@ resource "aws_autoscaling_group" "calibre-asg" {
 
 }
 
+#----- Storage -----
 
+resource "aws_efs_file_system" "books-dir" {
+  creation_token = "books-dir"
 
+  tags = {
+    Name = "Books-Directory"
+  }
+}
 
-
-
+resource "aws_efs_mount_target" "books-mount-target" {
+	file_system_id = "${aws_efs_file_system.books-dir.id}"
+	count = "${length(var.private_subnet_names)}"
+	subnet_id = "${element(aws_subnet.private_subnets.*.id, count.index)}"
+	security_groups = ["${aws_security_group.nfs_sg.id}"]
+}
 
 
 
