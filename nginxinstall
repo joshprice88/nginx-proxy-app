@@ -2,5 +2,18 @@
 
 amazon-linux-extras install -y epel
 yum -y install nginx
-echo "hello, world" > /usr/share/nginx/html/index.html
+PUBLIC_IP=$(curl http://169.254.169.254/latest/meta-data/public-ipv4)
+cat <<EOF > /etc/nginx/conf.d/proxypass.conf
+server {
+  listen 80;
+  listen [::]:80;
+
+  server_name $PUBLIC_IP;
+
+  location / {
+      proxy_pass http://${aws_lb_dns};
+  }
+}
+EOF
+
 systemctl start nginx && systemctl enable nginx

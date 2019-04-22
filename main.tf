@@ -9,6 +9,13 @@ resource "aws_key_pair" "project_auth" {
 	public_key = "${file(var.public_key_path)}"
 }
 
+data "template_file" "nginx_install" {
+  template = "${file(var.nginx_userdata_path)}"
+  vars = {
+    aws_lb_dns = "${aws_elb.calibre_elb.dns_name}"
+  }
+}
+
 resource "aws_instance" "nginx_rp" {
 	instance_type = "${var.nginx_instance_type}"
 	ami = "${var.nginx_instance_ami}"
@@ -21,7 +28,8 @@ resource "aws_instance" "nginx_rp" {
 	vpc_security_group_ids = ["${aws_security_group.calibre_rp_sg.id}"]
 	key_name = "${aws_key_pair.project_auth.id}"
 	
-	user_data = "${file(var.nginx_userdata_path)}"
+	user_data = "${data.template_file.nginx_install.rendered}"
+	depends_on = ["aws_elb.calibre_elb"]
 }
 
 resource "aws_instance" "calibre_bastion" {
@@ -78,6 +86,13 @@ resource "aws_elb" "calibre_elb" {
 		Name = "calibre-elb"
 	}
 }
+
+data "template_file" "calibre-install" {
+  template = "${file(var.calibre_userdata_path)}"
+  vars = {
+    nfs_mount_path = "${aws_efs_mount_target.books-mount-target.0.dns_name}"
+  }
+}
 	
 resource "aws_launch_configuration" "calibre_lc" {
 	name_prefix = "cal-lc-"
@@ -85,11 +100,12 @@ resource "aws_launch_configuration" "calibre_lc" {
 	image_id = "${var.calibre_instance_ami}"
 	security_groups = ["${aws_security_group.calibre_sg.id}", "${aws_security_group.nfs_sg.id}"]
 	key_name = "${aws_key_pair.project_auth.id}"	
-	user_data = "${file(var.calibre_userdata_path)}"
+	user_data = "${data.template_file.calibre-install.rendered}"
 	
 	lifecycle {
 		create_before_destroy = true
 	}
+	depends_on = ["aws_efs_file_system.books-dir"]
 }
 
 resource "aws_autoscaling_group" "calibre-asg" {
